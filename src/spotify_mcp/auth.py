@@ -30,7 +30,10 @@ SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
-DEFAULT_SCOPES = "user-read-currently-playing user-modify-playback-state"
+DEFAULT_SCOPES = (
+    "user-read-currently-playing user-modify-playback-state "
+    "playlist-modify-private playlist-modify-public"
+)
 
 
 class SpotifyAuthError(Exception):

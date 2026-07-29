@@ -9,10 +9,14 @@ from fastmcp import FastMCP
 from spotify_mcp.auth import SpotifyAuthError
 from spotify_mcp.spotify_client import (
     SpotifyAPIError,
+    add_items_to_playlist,
+    create_playlist as create_playlist_request,
     format_currently_playing,
+    format_playlist,
     format_track_results,
     get_currently_playing as get_currently_playing_request,
     pause_playback,
+    resolve_song_queries,
     search_tracks,
     skip_to_next,
     skip_to_previous,
@@ -144,6 +148,92 @@ def get_currently_playing(
         )
         return {"ok": True} | format_currently_playing(response)
     except (SpotifyAuthError, SpotifyAPIError) as exc:
+        return _error_response(exc)
+
+
+@mcp.tool
+def create_playlist(
+    name: str,
+    description: str | None = None,
+    public: bool = False,
+    collaborative: bool = False,
+) -> dict[str, Any]:
+    """Create an empty playlist for the current Spotify user."""
+    try:
+        response = create_playlist_request(
+            name=name,
+            description=description,
+            public=public,
+            collaborative=collaborative,
+        )
+        return {"ok": True, "playlist": format_playlist(response)}
+    except (SpotifyAuthError, SpotifyAPIError, ValueError) as exc:
+        return _error_response(exc)
+
+
+@mcp.tool
+def add_songs_to_playlist(
+    playlist_id: str,
+    song_queries: list[str],
+    market: str | None = None,
+) -> dict[str, Any]:
+    """Search for songs and add the best match for each query to a playlist."""
+    try:
+        matched, unresolved = resolve_song_queries(song_queries, market=market)
+        uris = [item["uri"] for item in matched]
+        add_items_to_playlist(playlist_id, uris)
+        return {
+            "ok": True,
+            "playlist_id": playlist_id,
+            "added_count": len(matched),
+            "added_tracks": [item["track"] for item in matched],
+            "unresolved_queries": unresolved,
+            "attribution": "Data provided by Spotify",
+        }
+    except (SpotifyAuthError, SpotifyAPIError, ValueError) as exc:
+        return _error_response(exc)
+
+
+@mcp.tool
+def create_vibe_playlist(
+    name: str,
+    vibe: str,
+    song_queries: list[str],
+    description: str | None = None,
+    public: bool = False,
+    market: str | None = None,
+) -> dict[str, Any]:
+    """Create a playlist from a vibe prompt by searching and adding matched songs.
+
+    The LLM should provide song_queries that fit the requested vibe. This tool
+    creates the playlist, resolves each query to a Spotify track, and adds them.
+    """
+    try:
+        playlist_description = description or f"Playlist inspired by: {vibe}"
+        playlist_response = create_playlist_request(
+            name=name,
+            description=playlist_description,
+            public=public,
+        )
+        playlist = format_playlist(playlist_response)
+        playlist_id = playlist.get("id")
+        if not playlist_id:
+            raise SpotifyAPIError(500, "Spotify did not return a playlist ID.")
+
+        matched, unresolved = resolve_song_queries(song_queries, market=market)
+        uris = [item["uri"] for item in matched]
+        add_items_to_playlist(playlist_id, uris)
+
+        return {
+            "ok": True,
+            "vibe": vibe,
+            "playlist": playlist,
+            "added_count": len(matched),
+            "added_tracks": [item["track"] for item in matched],
+            "unresolved_queries": unresolved,
+            "attribution": "Data provided by Spotify",
+        }
+    except (SpotifyAuthError, SpotifyAPIError, ValueError) as exc:
         return _error_response(exc)
 
 

@@ -7,6 +7,9 @@ A minimal [FastMCP](https://gofastmcp.com/) server for Spotify with Authorizatio
 - Search Spotify tracks with `search_song`
 - Control playback with `play`, `pause`, `skip_forward`, and `skip_backwards`
 - Read currently playing content with `get_currently_playing`
+- Create playlists with `create_playlist`
+- Add songs to playlists with `add_songs_to_playlist`
+- Build vibe playlists with `create_vibe_playlist`
 - PKCE login flow with local loopback callback
 - Tokens stored in the OS keyring
 - Automatic access-token refresh
@@ -54,8 +57,10 @@ By default, login requests the minimum scopes needed by the current tools:
 
 - `user-read-currently-playing`
 - `user-modify-playback-state`
+- `playlist-modify-private`
+- `playlist-modify-public`
 
-If you logged in before playback tools were added, run login again so Spotify grants the new scopes.
+If you logged in before playback or playlist tools were added, run login again so Spotify grants the new scopes.
 
 If login times out waiting for the callback:
 
@@ -137,10 +142,54 @@ Use get_currently_playing to tell me what's playing.
 Pause Spotify.
 ```
 
+## Playlist Tools
+
+Playlist endpoints use:
+
+- `POST /v1/me/playlists` to create playlists
+- `POST /v1/playlists/{playlist_id}/items` to add tracks
+- `GET /v1/search` with `type=track` to resolve song queries
+
+Tools:
+
+- `create_playlist(name, description=None, public=False, collaborative=False)`: create an empty playlist.
+- `add_songs_to_playlist(playlist_id, song_queries, market=None)`: search for each query and add the best match.
+- `create_vibe_playlist(name, vibe, song_queries, description=None, public=False, market=None)`: create a playlist and add matched songs for a vibe.
+
+### Vibe playlist workflow
+
+The LLM should turn your vibe prompt into a list of `song_queries`, then call `create_vibe_playlist`.
+
+Example prompt in Cursor:
+
+```text
+Create a late-night rainy drive playlist with create_vibe_playlist.
+Use a name like "Rainy Night Drive" and pick about 15 songs that fit the vibe.
+```
+
+The LLM might call:
+
+```text
+create_vibe_playlist(
+  name="Rainy Night Drive",
+  vibe="late-night rainy drive, mellow and atmospheric",
+  song_queries=[
+    "The Weeknd Blinding Lights",
+    "Frank Ocean Pink + White",
+    "Tame Impala The Less I Know The Better"
+  ],
+  public=false
+)
+```
+
+If some queries do not match, the tool returns `unresolved_queries` for the ones it could not find.
+
 ## Notes
 
-- Search uses PKCE user auth even though catalog search is public data. This keeps auth ready for future playlist and library tools.
-- Playback uses Spotify's documented Player endpoints and requests only `user-read-currently-playing` and `user-modify-playback-state`.
+- Search uses PKCE user auth even though catalog search is public data. This keeps auth ready for playlist and library tools.
+- Playback uses Spotify's documented Player endpoints.
+- Playlist tools request `playlist-modify-private` and `playlist-modify-public`.
+- This project does not use deprecated Spotify recommendation or audio-features endpoints for vibe playlists.
 - If auth expires or is revoked, run `python -m spotify_mcp.auth login` again.
 - Spotify content is attributed in tool responses and not cached beyond immediate use.
 

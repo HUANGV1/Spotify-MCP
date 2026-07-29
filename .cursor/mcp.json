@@ -6,7 +6,7 @@
       "cwd": "C:\\Users\\vihoh\\Coding Projects\\Spotify-MCP",
       "env": {
         "PYTHONUNBUFFERED": "1",
-        "SPOTIFY_MCP_TOOLS": "playback-v1"
+        "SPOTIFY_MCP_TOOLS": "playlist-v1"
       }
     }
   }

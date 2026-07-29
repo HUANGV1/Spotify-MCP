@@ -82,16 +82,19 @@ def _request(
         if response.status_code >= 400:
             raise SpotifyAPIError(response.status_code, _parse_error_message(response))
 
+        # Player and some playlist mutation endpoints may return 204, empty bodies,
+        # or opaque non-JSON success payloads. Treat any 2xx without JSON as success.
         if response.status_code == 204 or not response.text.strip():
             return {}
 
         try:
-            return response.json()
-        except json.JSONDecodeError as exc:
-            raise SpotifyAPIError(
-                response.status_code,
-                f"Spotify returned a non-JSON response: {response.text!r}",
-            ) from exc
+            parsed = response.json()
+        except json.JSONDecodeError:
+            return {}
+
+        if isinstance(parsed, dict):
+            return parsed
+        return {"value": parsed}
 
     if last_error:
         raise last_error
@@ -154,6 +157,113 @@ def skip_to_next(device_id: str | None = None) -> dict[str, Any]:
 def skip_to_previous(device_id: str | None = None) -> dict[str, Any]:
     params = {"device_id": device_id} if device_id else None
     return _request("POST", "/me/player/previous", params=params)
+
+
+def create_playlist(
+    name: str,
+    *,
+    description: str | None = None,
+    public: bool = False,
+    collaborative: bool = False,
+) -> dict[str, Any]:
+    if not name.strip():
+        raise ValueError("name is required.")
+    if collaborative and public:
+        raise ValueError("collaborative playlists must be private (public=False).")
+
+    body: dict[str, Any] = {
+        "name": name.strip(),
+        "public": public,
+        "collaborative": collaborative,
+    }
+    if description is not None:
+        body["description"] = description
+
+    return _request("POST", "/me/playlists", json_body=body)
+
+
+def add_items_to_playlist(
+    playlist_id: str,
+    uris: list[str],
+    *,
+    position: int | None = None,
+) -> dict[str, Any]:
+    if not playlist_id.strip():
+        raise ValueError("playlist_id is required.")
+    if not uris:
+        raise ValueError("uris must contain at least one Spotify URI.")
+
+    cleaned_uris = [uri for uri in uris if uri]
+    if not cleaned_uris:
+        raise ValueError("uris must contain at least one Spotify URI.")
+
+    last_response: dict[str, Any] = {}
+    for start in range(0, len(cleaned_uris), 100):
+        batch = cleaned_uris[start : start + 100]
+        body: dict[str, Any] = {"uris": batch}
+        if position is not None and start == 0:
+            body["position"] = position
+        last_response = _request(
+            "POST",
+            f"/playlists/{playlist_id}/items",
+            json_body=body,
+        )
+    return last_response
+
+
+def resolve_song_queries(
+    song_queries: list[str],
+    *,
+    market: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    if not song_queries:
+        raise ValueError("song_queries must contain at least one search query.")
+
+    matched: list[dict[str, Any]] = []
+    unresolved: list[str] = []
+
+    for query in song_queries:
+        cleaned = query.strip()
+        if not cleaned:
+            continue
+
+        response = search_tracks(query=cleaned, limit=1, market=market)
+        tracks = format_track_results(response)
+        if not tracks:
+            unresolved.append(cleaned)
+            continue
+
+        track = tracks[0]
+        if not track.get("uri"):
+            unresolved.append(cleaned)
+            continue
+
+        matched.append(
+            {
+                "query": cleaned,
+                "uri": track["uri"],
+                "track": track,
+            }
+        )
+
+    if not matched:
+        raise ValueError("No tracks could be resolved from the provided song queries.")
+
+    return matched, unresolved
+
+
+def format_playlist(playlist_response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": playlist_response.get("id"),
+        "name": playlist_response.get("name"),
+        "description": playlist_response.get("description"),
+        "public": playlist_response.get("public"),
+        "collaborative": playlist_response.get("collaborative"),
+        "uri": playlist_response.get("uri"),
+        "url": (playlist_response.get("external_urls") or {}).get("spotify"),
+        "owner": (playlist_response.get("owner") or {}).get("display_name"),
+        "attribution": "Data provided by Spotify",
+    }
 
 
 def format_track_results(search_response: dict[str, Any]) -> list[dict[str, Any]]:
