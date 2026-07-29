@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "spotify": {
+      "command": "C:\\Users\\vihoh\\Coding Projects\\Spotify-MCP\\.venv\\Scripts\\python.exe",
+      "args": ["-u", "-m", "spotify_mcp.server"],
+      "cwd": "C:\\Users\\vihoh\\Coding Projects\\Spotify-MCP",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "SPOTIFY_MCP_TOOLS": "playback-v1"
+      }
+    }
+  }
+}
